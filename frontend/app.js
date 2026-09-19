@@ -54,16 +54,17 @@ function renderResults(tracks) {
   resultsEl.innerHTML = "";
   tracks.forEach((track) => {
     const row = document.createElement("div");
-    row.className = "track-row";
+    const playable = track.playable !== false;
+    row.className = playable ? "track-row" : "track-row unavailable";
     row.innerHTML = `
       <img src="${track.artwork || ""}" alt="" />
       <div class="track-meta">
         <span class="title">${escapeHtml(track.title || "Untitled")}</span>
         <span class="author">${escapeHtml(track.author || "")}</span>
       </div>
-      <span class="track-duration">${fmtDuration(track.duration_ms)}</span>
+      <span class="track-duration">${playable ? fmtDuration(track.duration_ms) : "Not available"}</span>
     `;
-    row.addEventListener("click", () => addToQueueAndMaybePlay(track));
+    if (playable) row.addEventListener("click", () => addToQueueAndMaybePlay(track));
     resultsEl.appendChild(row);
   });
 }

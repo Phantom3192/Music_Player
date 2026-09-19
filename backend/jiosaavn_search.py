@@ -74,10 +74,12 @@ async def search(query: str, limit: int = 20) -> list[dict]:
             "duration_ms": int(float(duration_s) * 1000) if duration_s else None,
             "artwork": _pick_url(song.get("image")),
             "uri": _pick_url(song.get("downloadUrl")),  # already a direct audio URL
+            "playable": bool(_pick_url(song.get("downloadUrl"))),
             "popularity": _to_int(song.get("playCount") or song.get("play_count")),
             "source": "jiosaavn",
             "is_stream": False,
         })
 
-    # Drop any result the API returned without a usable audio URL.
-    return [r for r in results if r["uri"]]
+    # Keep results even when JioSaavn gave no audio link, so the UI can show
+    # them as "not available" instead of them silently disappearing.
+    return results

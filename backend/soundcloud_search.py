@@ -42,6 +42,7 @@ def _run_search(query: str, limit: int) -> list[dict]:
             "artwork": e.get("thumbnail") or _best_thumbnail(e.get("thumbnails")),
             "uri": e.get("webpage_url") or e.get("url"),
             "popularity": e.get("view_count"),  # SoundCloud play count
+            "playable": True,
             "source": "soundcloud",
             "is_stream": False,
         })

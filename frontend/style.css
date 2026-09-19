@@ -99,6 +99,7 @@ body {
 }
 
 .track-row:hover { background: var(--panel); }
+.track-row.unavailable { opacity: 0.45; cursor: not-allowed; }
 
 .track-row img {
   width: 44px;
