@@ -18,7 +18,7 @@ load_dotenv()
 
 FRONTEND_ORIGIN = os.getenv("FRONTEND_ORIGIN", "http://localhost:8000")
 
-app = FastAPI(title="Personal Music Player")
+app = FastAPI(title="Ghost Cave")
 
 app.add_middleware(
     CORSMiddleware,
@@ -96,6 +96,9 @@ async def api_search(q: str, source: str = "sc"):
             results = await soundcloud_search.search(q)
     except (soundcloud_search.SearchError, jiosaavn_search.JioSaavnError) as e:
         raise HTTPException(502, f"Search failed: {e}")
+    # Most popular first (play count). Sort is stable, so tracks without a
+    # play count keep their original order at the bottom.
+    results.sort(key=lambda r: r.get("popularity") or 0, reverse=True)
     return {"results": results}
 
 

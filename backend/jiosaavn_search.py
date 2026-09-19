@@ -31,7 +31,22 @@ def _pick_url(arr) -> str | None:
     return last.get("url") or last.get("link")
 
 
-async def search(query: str, limit: int = 15) -> list[dict]:
+def _to_int(value) -> int | None:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _artist_names(song) -> str | None:
+    """Newer API versions return artists as {"primary": [{"name": ...}]};
+    older ones used a plain `primaryArtists` string."""
+    primary = (song.get("artists") or {}).get("primary") or []
+    names = [a.get("name") for a in primary if a.get("name")]
+    return ", ".join(names) or song.get("primaryArtists") or song.get("artist")
+
+
+async def search(query: str, limit: int = 20) -> list[dict]:
     async with httpx.AsyncClient(timeout=15) as client:
         try:
             resp = await client.get(
@@ -55,10 +70,11 @@ async def search(query: str, limit: int = 15) -> list[dict]:
         duration_s = song.get("duration")
         results.append({
             "title": song.get("name") or song.get("title"),
-            "author": song.get("primaryArtists") or song.get("artist"),
+            "author": _artist_names(song),
             "duration_ms": int(float(duration_s) * 1000) if duration_s else None,
             "artwork": _pick_url(song.get("image")),
             "uri": _pick_url(song.get("downloadUrl")),  # already a direct audio URL
+            "popularity": _to_int(song.get("playCount") or song.get("play_count")),
             "source": "jiosaavn",
             "is_stream": False,
         })

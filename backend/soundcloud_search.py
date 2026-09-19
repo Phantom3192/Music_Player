@@ -41,6 +41,7 @@ def _run_search(query: str, limit: int) -> list[dict]:
             "duration_ms": int(e["duration"] * 1000) if e.get("duration") else None,
             "artwork": e.get("thumbnail") or _best_thumbnail(e.get("thumbnails")),
             "uri": e.get("webpage_url") or e.get("url"),
+            "popularity": e.get("view_count"),  # SoundCloud play count
             "source": "soundcloud",
             "is_stream": False,
         })
@@ -53,7 +54,7 @@ def _best_thumbnail(thumbnails):
     return thumbnails[-1].get("url")
 
 
-async def search(query: str, limit: int = 15) -> list[dict]:
+async def search(query: str, limit: int = 20) -> list[dict]:
     async with _search_semaphore:
         loop = asyncio.get_running_loop()
         try:
