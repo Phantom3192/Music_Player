@@ -40,7 +40,7 @@ def _run_search(query: str, limit: int) -> list[dict]:
             "author": e.get("uploader") or e.get("channel"),
             "duration_ms": int(e["duration"] * 1000) if e.get("duration") else None,
             "artwork": e.get("thumbnail") or _best_thumbnail(e.get("thumbnails")),
-            "uri": e.get("url") or e.get("webpage_url"),
+            "uri": e.get("webpage_url") or e.get("url"),
             "source": "soundcloud",
             "is_stream": False,
         })
