@@ -40,7 +40,9 @@ _extract_semaphore = asyncio.Semaphore(4)
 
 def _extract_direct_url(source_url: str) -> dict:
     ydl_opts = {
-        "format": "bestaudio/best",
+        # Prefer a plain HTTP(S) file. SoundCloud's best audio is often an HLS
+        # (.m3u8) playlist, which a browser <audio> tag can't play through a proxy.
+        "format": "bestaudio[protocol^=http]/bestaudio",
         "quiet": True,
         "no_warnings": True,
         "noplaylist": True,
@@ -50,9 +52,20 @@ def _extract_direct_url(source_url: str) -> dict:
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(source_url, download=False)
 
+    if "m3u8" in (info.get("protocol") or "") or ".m3u8" in info["url"]:
+        raise RuntimeError("Only an HLS stream is available for this track")
+
+    ext = info.get("ext", "webm")
+    content_type = {
+        "mp3": "audio/mpeg",
+        "m4a": "audio/mp4",
+        "opus": "audio/ogg",
+        "ogg": "audio/ogg",
+    }.get(ext, f"audio/{ext}")
+
     return {
         "url": info["url"],
-        "content_type": f"audio/{info.get('ext', 'webm')}",
+        "content_type": content_type,
         "title": info.get("title"),
     }
 
