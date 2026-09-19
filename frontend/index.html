@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Sift — a personal listening room</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <header class="topbar">
+    <span class="wordmark">Sift</span>
+    <form id="search-form" class="search-form">
+      <input id="search-input" type="text" placeholder="Find a song, artist, anything…" autocomplete="off" />
+      <select id="source-select">
+        <option value="sc">SoundCloud</option>
+        <option value="jiosaavn">JioSaavn</option>
+      </select>
+      <button type="submit">Search</button>
+    </form>
+  </header>
+
+  <main class="layout">
+    <section class="results" id="results">
+      <p class="hint">Search for something to start filling your queue.</p>
+    </section>
+
+    <aside class="queue-panel">
+      <h2>Queue</h2>
+      <ol id="queue-list" class="queue-list"></ol>
+    </aside>
+  </main>
+
+  <footer class="player-bar" id="player-bar">
+    <div class="now-playing">
+      <img id="np-artwork" src="" alt="" />
+      <div class="np-text">
+        <span id="np-title">Nothing playing</span>
+        <span id="np-author"></span>
+      </div>
+    </div>
+
+    <div class="transport">
+      <button id="prev-btn" title="Previous">⏮</button>
+      <button id="play-btn" title="Play/Pause">▶</button>
+      <button id="next-btn" title="Next">⏭</button>
+      <input id="seek" type="range" min="0" max="100" value="0" />
+      <span id="time-label">0:00 / 0:00</span>
+    </div>
+
+    <input id="volume" type="range" min="0" max="1" step="0.01" value="1" />
+  </footer>
+
+  <audio id="audio"></audio>
+  <script src="app.js"></script>
+</body>
+</html>
