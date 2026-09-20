@@ -17,6 +17,7 @@ in a small in-memory LRU cache, and serve it to the browser ourselves.
 """
 
 import asyncio
+import json
 import os
 import time
 from collections import OrderedDict
@@ -132,19 +133,43 @@ def _sniff(data: bytes) -> str | None:
 # modern browsers, then whatever Lavalink considers best.
 _ITAGS = (140, 251, None)
 
+# Lavalink's stream route takes an optional `clientIdentifier`. If its default
+# client choice fails (HTTP 500), try these one by one and remember the winner.
+_CLIENTS = ("ANDROID_VR", "TV", "WEB", "MWEB", "ANDROID_MUSIC", "IOS", "TVHTML5_SIMPLY")
+_preferred_client: str | None = None
 
-async def _attempt(client: httpx.AsyncClient, url: str, itag, headers: dict, limit: int | None) -> dict:
+
+def _error_message(body: bytes) -> str:
+    """Pull Lavalink's own error text out of a non-200 response body."""
+    text = body[:2000].decode("utf-8", "replace").strip()
+    try:
+        data = json.loads(text)
+        if isinstance(data, dict):
+            return str(data.get("message") or data.get("error") or text)[:300]
+    except ValueError:
+        pass
+    return text.replace("\n", " ")[:300]
+
+
+async def _attempt(client: httpx.AsyncClient, url: str, itag, lava_client, headers: dict, limit: int | None) -> dict:
     """One request to Lavalink's stream route. Never raises for HTTP problems."""
-    att = {"itag": itag, "status": None, "content_type": None, "bytes": 0,
+    att = {"itag": itag, "client": lava_client, "status": None, "content_type": None, "bytes": 0,
            "seconds": 0.0, "kind": None, "head_hex": None, "note": None, "data": None}
+    params = {}
+    if itag:
+        params["itag"] = itag
+    if lava_client:
+        params["clientIdentifier"] = lava_client
+
     started = time.monotonic()
     try:
-        async with client.stream("GET", url, params={"itag": itag} if itag else None, headers=headers) as resp:
+        async with client.stream("GET", url, params=params or None, headers=headers) as resp:
             att["status"] = resp.status_code
             att["content_type"] = (resp.headers.get("content-type") or "").split(";")[0].strip() or None
             if resp.status_code == 401:
                 raise LavalinkError("Lavalink rejected the password (HTTP 401)")
             if resp.status_code != 200:
+                att["note"] = _error_message(await resp.aread()) or None
                 return att
 
             buf = bytearray()
@@ -170,39 +195,63 @@ async def _attempt(client: httpx.AsyncClient, url: str, itag, headers: dict, lim
     return att
 
 
-def _describe(att: dict) -> str:
-    label = f"itag {att['itag'] or 'default'}"
-    if att["status"] != 200:
-        return f"{label}: HTTP {att['status']}"
-    return f"{label}: {att['note'] or att['kind']}"
+def _combos() -> list[tuple]:
+    """(itag, clientIdentifier) pairs in the order we try them."""
+    combos = []
+    if _preferred_client:
+        combos.append((140, _preferred_client))
+    combos += [(itag, None) for itag in _ITAGS]
+    for c in _CLIENTS:
+        if c != _preferred_client:
+            combos += [(140, c), (None, c)]
+    return combos
 
 
 async def _try_formats(video_id: str, limit: int | None) -> tuple[list[dict], dict | None]:
+    global _preferred_client
     base, headers = _config()
     routes = [f"{base}/youtube/stream/{video_id}", f"{base}/v4/youtube/stream/{video_id}"]
     attempts: list[dict] = []
+    deadline = time.monotonic() + 30  # don't keep the listener waiting forever
 
     async with httpx.AsyncClient(timeout=httpx.Timeout(60, connect=10)) as client:
-        for itag in _ITAGS:
+        for itag, lava_client in _combos():
+            if attempts and time.monotonic() > deadline:
+                break
             for route in routes:
-                att = await _attempt(client, route, itag, headers, limit)
+                att = await _attempt(client, route, itag, lava_client, headers, limit)
                 att["route"] = route[len(base):]
                 attempts.append(att)
                 if att["status"] == 200 and att["kind"]:
+                    if lava_client:
+                        _preferred_client = lava_client
                     return attempts, att
                 if att["status"] != 404:
-                    break  # route exists (or failed otherwise); try the next format
+                    break  # route exists (or failed otherwise); try the next combo
     return attempts, None
+
+
+def _reasons(attempts: list[dict]) -> str:
+    """Short, de-duplicated summary of why every attempt failed."""
+    seen: list[str] = []
+    for a in attempts:
+        if a["status"] == 200:
+            why = a["note"] or "no audio"
+        else:
+            why = f"HTTP {a['status']}" + (f": {a['note']}" if a["note"] else "")
+        if why not in seen:
+            seen.append(why)
+    return "; ".join(seen[:3])
 
 
 async def _download(video_id: str) -> tuple[bytes, str]:
     attempts, good = await _try_formats(video_id, limit=None)
     for a in attempts:
-        print(f"[lavalink] {video_id} {a['route']} itag={a['itag']} -> HTTP {a['status']} "
+        print(f"[lavalink] {video_id} {a['route']} itag={a['itag']} client={a['client']} -> HTTP {a['status']} "
               f"{a['content_type']} {a['bytes']} bytes in {a['seconds']}s kind={a['kind']} {a['note'] or ''}",
               flush=True)
     if not good:
-        raise LavalinkError("Lavalink could not stream this video (" + "; ".join(_describe(a) for a in attempts[:4]) + ")")
+        raise LavalinkError(f"Lavalink could not stream this video ({_reasons(attempts)})")
     return good["data"], good["kind"]
 
 
@@ -211,10 +260,11 @@ async def debug(video_id: str) -> dict:
     attempts, good = await _try_formats(video_id, limit=512 * 1024)
     out = []
     for a in attempts:
-        kbps = round(a["bytes"] / 1024 / a["seconds"]) if a["seconds"] else None
-        out.append({k: a[k] for k in ("route", "itag", "status", "content_type", "kind", "bytes", "seconds", "head_hex", "note")}
+        kbps = round(a["bytes"] / 1024 / a["seconds"]) if a["seconds"] and a["bytes"] else None
+        out.append({k: a[k] for k in ("route", "itag", "client", "status", "content_type", "kind",
+                                      "bytes", "seconds", "head_hex", "note")}
                    | {"speed_kb_per_s": kbps})
-    return {"works": bool(good), "attempts": out}
+    return {"works": bool(good), "used_client": good["client"] if good else None, "attempts": out}
 
 
 async def get_audio(video_id: str) -> tuple[bytes, str]:
