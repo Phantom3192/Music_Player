@@ -138,3 +138,38 @@ seek.addEventListener("input", () => {
 volume.addEventListener("input", () => {
   audio.volume = parseFloat(volume.value);
 });
+
+// ---- Lavalink node status ---------------------------------------------------
+
+const nodeStatusEl = document.getElementById("lavalink-status");
+const nodeStatusLabel = nodeStatusEl.querySelector(".label");
+
+async function refreshNodeStatus() {
+  try {
+    const res = await fetch(`${API_BASE}/api/lavalink/status`);
+    const s = await res.json();
+    if (s.connected) {
+      nodeStatusEl.className = "node-status ok";
+      nodeStatusLabel.textContent = "Lavalink node connected";
+      const parts = [];
+      if (s.version) parts.push(`Lavalink v${s.version}`);
+      if (s.latency_ms != null) parts.push(`${s.latency_ms} ms`);
+      if (s.plugins && s.plugins.length) parts.push(s.plugins.join(", "));
+      nodeStatusEl.title = parts.join(" · ");
+    } else {
+      nodeStatusEl.className = "node-status down";
+      nodeStatusLabel.textContent = "Lavalink node offline";
+      nodeStatusEl.title = s.reason || "Not connected";
+    }
+  } catch (err) {
+    nodeStatusEl.className = "node-status down";
+    nodeStatusLabel.textContent = "Lavalink node offline";
+    nodeStatusEl.title = "Could not reach the Ghost Cave server";
+  }
+}
+
+refreshNodeStatus();
+setInterval(refreshNodeStatus, 30000);
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) refreshNodeStatus();
+});

@@ -87,6 +87,12 @@ async def _get_direct_stream_info(source_url: str) -> dict:
     return info
 
 
+@app.get("/api/lavalink/status")
+async def api_lavalink_status():
+    """Used by the header badge to show whether the Lavalink node is reachable."""
+    return await lavalink_source.status()
+
+
 @app.get("/api/search")
 async def api_search(q: str, source: str = "sc"):
     if not q.strip():

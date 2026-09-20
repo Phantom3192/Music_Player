@@ -18,6 +18,7 @@ in a small in-memory LRU cache, and serve it to the browser ourselves.
 
 import asyncio
 import os
+import time
 from collections import OrderedDict
 
 import httpx
@@ -176,3 +177,41 @@ async def get_audio(video_id: str) -> tuple[bytes, str]:
             return item
     finally:
         _download_locks.pop(video_id, None)
+
+
+# ---- Status ----------------------------------------------------------------
+async def status() -> dict:
+    """Health check for the UI badge. Never raises; always returns a dict."""
+    try:
+        base, headers = _config()
+    except LavalinkError as e:
+        return {"connected": False, "reason": str(e)}
+
+    started = time.monotonic()
+    try:
+        async with httpx.AsyncClient(timeout=5) as client:
+            resp = await client.get(f"{base}/v4/info", headers=headers)
+    except httpx.HTTPError as e:
+        return {"connected": False, "reason": f"Cannot reach the Lavalink server ({type(e).__name__})"}
+    latency_ms = round((time.monotonic() - started) * 1000)
+
+    if resp.status_code == 401:
+        return {"connected": False, "reason": "Lavalink rejected the password"}
+    if resp.status_code != 200:
+        return {"connected": False, "reason": f"Lavalink returned HTTP {resp.status_code}"}
+
+    try:
+        info = resp.json()
+    except ValueError:
+        info = {}
+    plugins = [
+        f"{p.get('name')} {p.get('version')}".strip()
+        for p in (info.get("plugins") or [])
+        if isinstance(p, dict) and p.get("name")
+    ]
+    return {
+        "connected": True,
+        "version": (info.get("version") or {}).get("semver"),
+        "latency_ms": latency_ms,
+        "plugins": plugins,
+    }
