@@ -29,7 +29,7 @@ def _to_int(value) -> int | None:
 
 
 async def search(query: str, limit: int = 20) -> list[dict]:
-    async with httpx.AsyncClient(timeout=15) as client:
+    async with httpx.AsyncClient(timeout=40) as client:
         try:
             # The "universal" /result/ endpoint accepts a plain search term
             # (as opposed to a jiosaavn.com URL) and returns a list of songs.
