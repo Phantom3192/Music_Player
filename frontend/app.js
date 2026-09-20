@@ -106,7 +106,7 @@ function playIndex(i) {
   npAuthor.textContent = track.author || "";
 
   audio.src = `${API_BASE}/api/stream?url=${encodeURIComponent(track.uri)}&source=${encodeURIComponent(track.source)}`;
-  audio.play();
+  audio.play().catch(() => {});
   renderQueue();
 }
 
@@ -172,4 +172,18 @@ refreshNodeStatus();
 setInterval(refreshNodeStatus, 30000);
 document.addEventListener("visibilitychange", () => {
   if (!document.hidden) refreshNodeStatus();
+});
+// ---- Playback errors --------------------------------------------------------
+// Without this a failed track just sits at 0:00 with no explanation.
+audio.addEventListener("error", async () => {
+  if (!audio.src) return;
+  console.error("Audio error", audio.error);
+  npAuthor.textContent = "⚠ Couldn't play this track";
+  try {
+    const r = await fetch(audio.src, { headers: { Range: "bytes=0-0" } });
+    if (!r.ok) {
+      const j = await r.json().catch(() => null);
+      if (j && j.detail) npAuthor.textContent = "⚠ " + j.detail;
+    }
+  } catch (_) {}
 });

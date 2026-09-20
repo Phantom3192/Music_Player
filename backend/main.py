@@ -93,6 +93,17 @@ async def api_lavalink_status():
     return await lavalink_source.status()
 
 
+@app.get("/api/youtube/debug")
+async def api_youtube_debug(id: str):
+    """Diagnostics: what does Lavalink return for this video id? (no secrets)"""
+    if not re.fullmatch(r"[A-Za-z0-9_-]{11}", id):
+        raise HTTPException(400, "Invalid YouTube video id")
+    try:
+        return await lavalink_source.debug(id)
+    except lavalink_source.LavalinkError as e:
+        return {"works": False, "error": str(e)}
+
+
 @app.get("/api/search")
 async def api_search(q: str, source: str = "sc"):
     if not q.strip():

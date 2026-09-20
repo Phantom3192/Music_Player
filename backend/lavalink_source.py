@@ -113,47 +113,108 @@ async def search(query: str, limit: int = 20) -> list[dict]:
 
 
 # ---- Audio -----------------------------------------------------------------
-async def _download(video_id: str) -> tuple[bytes, str]:
+def _sniff(data: bytes) -> str | None:
+    """Identify the audio container from its first bytes (don't trust headers)."""
+    if len(data) < 8:
+        return None
+    if data[4:8] in (b"ftyp", b"styp", b"moov", b"moof"):
+        return "audio/mp4"
+    if data[:4] == b"\x1a\x45\xdf\xa3":
+        return "audio/webm"
+    if data[:4] == b"OggS":
+        return "audio/ogg"
+    if data[:3] == b"ID3" or (data[0] == 0xFF and (data[1] & 0xE0) == 0xE0):
+        return "audio/mpeg"
+    return None
+
+
+# Formats to try, in order: AAC/m4a plays everywhere, opus/webm in nearly all
+# modern browsers, then whatever Lavalink considers best.
+_ITAGS = (140, 251, None)
+
+
+async def _attempt(client: httpx.AsyncClient, url: str, itag, headers: dict, limit: int | None) -> dict:
+    """One request to Lavalink's stream route. Never raises for HTTP problems."""
+    att = {"itag": itag, "status": None, "content_type": None, "bytes": 0,
+           "seconds": 0.0, "kind": None, "head_hex": None, "note": None, "data": None}
+    started = time.monotonic()
+    try:
+        async with client.stream("GET", url, params={"itag": itag} if itag else None, headers=headers) as resp:
+            att["status"] = resp.status_code
+            att["content_type"] = (resp.headers.get("content-type") or "").split(";")[0].strip() or None
+            if resp.status_code == 401:
+                raise LavalinkError("Lavalink rejected the password (HTTP 401)")
+            if resp.status_code != 200:
+                return att
+
+            buf = bytearray()
+            async for chunk in resp.aiter_bytes():
+                buf.extend(chunk)
+                if len(buf) > _MAX_TRACK_BYTES:
+                    att["note"] = "track too large"
+                    return att
+                if limit and len(buf) >= limit:
+                    break
+            att["bytes"] = len(buf)
+            att["head_hex"] = bytes(buf[:16]).hex()
+            att["kind"] = _sniff(bytes(buf))
+            if not buf:
+                att["note"] = "empty response"
+            elif not att["kind"]:
+                att["note"] = "not audio: " + bytes(buf[:100]).decode("utf-8", "replace").replace("\n", " ")
+            att["data"] = bytes(buf)
+    except httpx.HTTPError as e:
+        att["note"] = f"{type(e).__name__}: {e}"
+    finally:
+        att["seconds"] = round(time.monotonic() - started, 2)
+    return att
+
+
+def _describe(att: dict) -> str:
+    label = f"itag {att['itag'] or 'default'}"
+    if att["status"] != 200:
+        return f"{label}: HTTP {att['status']}"
+    return f"{label}: {att['note'] or att['kind']}"
+
+
+async def _try_formats(video_id: str, limit: int | None) -> tuple[list[dict], dict | None]:
     base, headers = _config()
+    routes = [f"{base}/youtube/stream/{video_id}", f"{base}/v4/youtube/stream/{video_id}"]
+    attempts: list[dict] = []
 
-    # AAC/m4a (itag 140) plays in every browser. If Lavalink doesn't have it,
-    # ask for whatever it considers best. The second route covers Lavalink
-    # builds that prefix plugin routes with /v4.
-    candidates = [
-        (f"{base}/youtube/stream/{video_id}", {"itag": 140}),
-        (f"{base}/v4/youtube/stream/{video_id}", {"itag": 140}),
-        (f"{base}/youtube/stream/{video_id}", None),
-    ]
-
-    last_error = "no response"
     async with httpx.AsyncClient(timeout=httpx.Timeout(60, connect=10)) as client:
-        for url, params in candidates:
-            try:
-                async with client.stream("GET", url, params=params, headers=headers) as resp:
-                    if resp.status_code == 401:
-                        raise LavalinkError("Lavalink rejected the password (HTTP 401)")
-                    if resp.status_code != 200:
-                        last_error = f"HTTP {resp.status_code}"
-                        continue
+        for itag in _ITAGS:
+            for route in routes:
+                att = await _attempt(client, route, itag, headers, limit)
+                att["route"] = route[len(base):]
+                attempts.append(att)
+                if att["status"] == 200 and att["kind"]:
+                    return attempts, att
+                if att["status"] != 404:
+                    break  # route exists (or failed otherwise); try the next format
+    return attempts, None
 
-                    buf = bytearray()
-                    async for chunk in resp.aiter_bytes():
-                        buf.extend(chunk)
-                        if len(buf) > _MAX_TRACK_BYTES:
-                            raise LavalinkError("Track is too large to play")
 
-                    if not buf:
-                        last_error = "empty response"
-                        continue
+async def _download(video_id: str) -> tuple[bytes, str]:
+    attempts, good = await _try_formats(video_id, limit=None)
+    for a in attempts:
+        print(f"[lavalink] {video_id} {a['route']} itag={a['itag']} -> HTTP {a['status']} "
+              f"{a['content_type']} {a['bytes']} bytes in {a['seconds']}s kind={a['kind']} {a['note'] or ''}",
+              flush=True)
+    if not good:
+        raise LavalinkError("Lavalink could not stream this video (" + "; ".join(_describe(a) for a in attempts[:4]) + ")")
+    return good["data"], good["kind"]
 
-                    ctype = (resp.headers.get("content-type") or "").split(";")[0].strip()
-                    if not ctype.startswith(("audio/", "video/")):
-                        ctype = "audio/mp4"
-                    return bytes(buf), ctype
-            except httpx.HTTPError as e:
-                raise LavalinkError(f"Could not reach Lavalink: {e}") from e
 
-    raise LavalinkError(f"Lavalink could not stream this video ({last_error})")
+async def debug(video_id: str) -> dict:
+    """Probe the stream route without caching: shows what Lavalink really returns."""
+    attempts, good = await _try_formats(video_id, limit=512 * 1024)
+    out = []
+    for a in attempts:
+        kbps = round(a["bytes"] / 1024 / a["seconds"]) if a["seconds"] else None
+        out.append({k: a[k] for k in ("route", "itag", "status", "content_type", "kind", "bytes", "seconds", "head_hex", "note")}
+                   | {"speed_kb_per_s": kbps})
+    return {"works": bool(good), "attempts": out}
 
 
 async def get_audio(video_id: str) -> tuple[bytes, str]:
