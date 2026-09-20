@@ -1,63 +1,41 @@
 """
-JioSaavn source, via the community-run saavn.dev API (wraps JioSaavn's own
-undocumented endpoints — see https://github.com/sumitkolhe/jiosaavn-api).
+JioSaavn source, via a self-hosted instance of cyberboysumanjay's Flask-based
+JioSaavnAPI (see https://github.com/cyberboysumanjay/JioSaavnAPI).
 
-Unlike YouTube/SoundCloud, JioSaavn's songs are already plain HTTPS audio
+Unlike YouTube/SoundCloud, JioSaavn's songs are already plain HTTPS .mp3
 files, so there's no yt-dlp-style extraction step: search gives us a direct,
 playable URL right away.
 
-Note: saavn.dev's public instance is a *demo* with rate limiting. For
-anything beyond light personal use, self-host your own instance (the repo
-deploys to Vercel in a couple of commands) and point SAAVN_API_BASE at it.
+This API is a small Flask app meant to be self-hosted (it isn't a maintained
+public service), so SAAVN_API_BASE should normally point at your own
+deployment, e.g. http://localhost:5000 or wherever you've deployed it.
 """
 
-import html
 import os
 import httpx
 
-SAAVN_API_BASE = os.getenv("SAAVN_API_BASE", "https://saavn.dev/api")
+SAAVN_API_BASE = os.getenv("SAAVN_API_BASE", "http://127.0.0.1:5000")
 
 
 class JioSaavnError(Exception):
     pass
 
 
-def _pick_url(arr) -> str | None:
-    """downloadUrl/image entries are lists of {quality, url|link} — take the
-    last (highest quality) and accept either key name, since this varies
-    across API versions."""
-    if not arr:
-        return None
-    last = arr[-1]
-    return last.get("url") or last.get("link")
-
-
-def _clean(text: str | None) -> str | None:
-    """JioSaavn returns HTML-escaped text (e.g. "D&amp;B"); decode it."""
-    return html.unescape(text) if text else text
-
-
 def _to_int(value) -> int | None:
     try:
-        return int(value)
+        return int(float(value))
     except (TypeError, ValueError):
         return None
-
-
-def _artist_names(song) -> str | None:
-    """Newer API versions return artists as {"primary": [{"name": ...}]};
-    older ones used a plain `primaryArtists` string."""
-    primary = (song.get("artists") or {}).get("primary") or []
-    names = [a.get("name") for a in primary if a.get("name")]
-    return ", ".join(names) or song.get("primaryArtists") or song.get("artist")
 
 
 async def search(query: str, limit: int = 20) -> list[dict]:
     async with httpx.AsyncClient(timeout=15) as client:
         try:
+            # The "universal" /result/ endpoint accepts a plain search term
+            # (as opposed to a jiosaavn.com URL) and returns a list of songs.
             resp = await client.get(
-                f"{SAAVN_API_BASE}/search/songs",
-                params={"query": query, "limit": limit},
+                f"{SAAVN_API_BASE}/result/",
+                params={"query": query, "lyrics": "false"},
             )
         except httpx.HTTPError as e:
             raise JioSaavnError(f"Could not reach JioSaavn API: {e}")
@@ -66,22 +44,34 @@ async def search(query: str, limit: int = 20) -> list[dict]:
         raise JioSaavnError(f"JioSaavn API returned {resp.status_code}")
 
     payload = resp.json()
-    if payload.get("success") is False:
-        raise JioSaavnError(payload.get("message", "Unknown JioSaavn API error"))
 
-    songs = (payload.get("data") or {}).get("results") or []
+    # This API returns {"status": False, "error": "..."} on failure, and
+    # either a bare list or {"songs": [...]} of song dicts on success.
+    if isinstance(payload, dict) and payload.get("status") is False:
+        raise JioSaavnError(payload.get("error", "Unknown JioSaavn API error"))
+
+    if isinstance(payload, dict):
+        songs = payload.get("songs") or payload.get("results") or []
+    else:
+        songs = payload or []
+
+    # A single-song lookup (e.g. a direct song URL was passed) comes back as
+    # one dict rather than a list — normalize it.
+    if isinstance(songs, dict):
+        songs = [songs]
 
     results = []
-    for song in songs:
+    for song in songs[:limit]:
         duration_s = song.get("duration")
+        uri = song.get("media_url") or song.get("url")
         results.append({
-            "title": _clean(song.get("name") or song.get("title")),
-            "author": _clean(_artist_names(song)),
+            "title": song.get("song") or song.get("title"),
+            "author": song.get("singers") or song.get("primary_artists"),
             "duration_ms": int(float(duration_s) * 1000) if duration_s else None,
-            "artwork": _pick_url(song.get("image")),
-            "uri": _pick_url(song.get("downloadUrl")),  # already a direct audio URL
-            "playable": bool(_pick_url(song.get("downloadUrl"))),
-            "popularity": _to_int(song.get("playCount") or song.get("play_count")),
+            "artwork": song.get("image") or song.get("image_url"),
+            "uri": uri,  # already a direct, playable .mp3 URL
+            "playable": bool(uri),
+            "popularity": _to_int(song.get("play_count") or song.get("playCount")),
             "source": "jiosaavn",
             "is_stream": False,
         })

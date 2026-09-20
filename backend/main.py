@@ -184,7 +184,7 @@ async def api_stream(request: Request, url: str, source: str = "sc"):
 
     if source == "jiosaavn":
         target_url = source_url
-        content_type = "audio/mp4"  # JioSaavn typically serves .m4a/mp4 audio
+        content_type = "audio/mpeg"  # JioSaavn (cyberboysumanjay/JioSaavnAPI) serves .mp3 audio
     else:
         try:
             info = await _get_direct_stream_info(source_url)
