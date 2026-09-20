@@ -71,6 +71,7 @@ async def search(query: str, limit: int = 20) -> list[dict]:
             "artwork": song.get("image") or song.get("image_url"),
             "uri": uri,  # already a direct, playable .mp3 URL
             "playable": bool(uri),
+            "available": song.get("available", True),
             "popularity": _to_int(song.get("play_count") or song.get("playCount")),
             "source": "jiosaavn",
             "is_stream": False,
