@@ -1,23 +1,25 @@
-# Sift — personal music player
+# Ghost Cave — personal music player
 
-Browser-based player with two sources: SoundCloud (via `yt-dlp`) and
-JioSaavn (via the public `saavn.dev` API). No Lavalink, no Discord bot,
-no YouTube — dropped it since it was the one source needing cookies and
-regularly hitting bot-detection.
+Browser-based player with three sources: SoundCloud (via `yt-dlp`),
+JioSaavn (via a `jiosaavn-api` instance), and YouTube (via your own Lavalink
+server, which handles YouTube's OAuth / PO-token checks so no cookies are
+needed here).
 
 ## Architecture
 
 ```
 Browser (index.html/app.js)
-   │
-   ├── GET /api/search?q=...&source=sc|jiosaavn
-   │     ├── sc            → yt-dlp search (extract_flat — fast metadata only)
-   │     └── jiosaavn      → saavn.dev /api/search/songs (direct HTTP call)
-   │
-   └── GET /api/stream?url=...&source=...
-         ├── sc            → yt-dlp resolves direct audio → proxied w/ Range
-         └── jiosaavn      → already a direct audio URL → proxied straight
-                              through, no extraction needed
+   |
+   |-- GET /api/search?q=...&source=sc|jiosaavn|youtube
+   |     |-- sc        -> yt-dlp search (extract_flat, fast metadata only)
+   |     |-- jiosaavn  -> jiosaavn-api /api/search/songs
+   |     '-- youtube   -> Lavalink /v4/loadtracks (ytmsearch, then ytsearch)
+   |
+   '-- GET /api/stream?url=...&source=...
+         |-- sc        -> yt-dlp resolves direct audio -> proxied w/ Range
+         |-- jiosaavn  -> already a direct audio URL -> proxied straight through
+         '-- youtube   -> Lavalink /youtube/stream/<id> -> downloaded once,
+                          cached in memory, served with Range support
 ```
 
 ## Setup
@@ -27,7 +29,10 @@ cd backend
 python -m venv venv
 source venv/bin/activate        # Windows: venv\Scripts\activate
 pip install -r requirements.txt
-cp .env.example .env            # adjust FRONTEND_ORIGIN / SAAVN_API_BASE if needed
+# Configuration goes in environment variables (or a .env file in backend/):
+#   SAAVN_API_BASE     e.g. https://your-jiosaavn-api.vercel.app/api
+#   LAVALINK_URL       e.g. http://127.0.0.1:26135
+#   LAVALINK_PASSWORD  your Lavalink server password
 ```
 
 Run it:
@@ -40,6 +45,12 @@ uvicorn main:app --reload --port 8000
 Open http://localhost:8000 — the backend also serves the frontend directly.
 
 ## Notes / known rough edges
+
+- **YouTube source (Lavalink):** needs `LAVALINK_URL` and `LAVALINK_PASSWORD`.
+  Lavalink's YouTube plugin must be running with its OAuth token / PO-token
+  helper. If it breaks, only the YouTube source is affected. Each track is
+  downloaded once into an in-memory cache (20 tracks, max 40 MB each) so the
+  seek bar works; the video id is validated before it is used in a Lavalink URL.
 
 - **Stream cache:** resolved SoundCloud CDN URLs are cached in-memory for 3
   hours (`_stream_cache` in `main.py`). Fine for a single-process personal

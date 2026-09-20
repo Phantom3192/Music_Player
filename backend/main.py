@@ -1,5 +1,6 @@
 import asyncio
 import os
+import re
 import time
 from urllib.parse import unquote
 
@@ -8,10 +9,11 @@ import yt_dlp
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 import jiosaavn_search
+import lavalink_source
 import soundcloud_search
 
 load_dotenv()
@@ -92,14 +94,59 @@ async def api_search(q: str, source: str = "sc"):
     try:
         if source == "jiosaavn":
             results = await jiosaavn_search.search(q)
+        elif source == "youtube":
+            results = await lavalink_source.search(q)
         else:
             results = await soundcloud_search.search(q)
-    except (soundcloud_search.SearchError, jiosaavn_search.JioSaavnError) as e:
+    except (
+        soundcloud_search.SearchError,
+        jiosaavn_search.JioSaavnError,
+        lavalink_source.LavalinkError,
+    ) as e:
         raise HTTPException(502, f"Search failed: {e}")
     # Most popular first (play count). Sort is stable, so tracks without a
     # play count keep their original order at the bottom.
     results.sort(key=lambda r: r.get("popularity") or 0, reverse=True)
     return {"results": results}
+
+
+def _range_response(data: bytes, content_type: str, range_header: str | None) -> Response:
+    """Serve in-memory audio with HTTP Range support so the seek bar works."""
+    total = len(data)
+    headers = {"accept-ranges": "bytes"}
+
+    if range_header:
+        m = re.fullmatch(r"bytes=(\d*)-(\d*)", range_header.strip())
+        if m and (m.group(1) or m.group(2)):
+            start_s, end_s = m.groups()
+            if not start_s:  # suffix range: last N bytes
+                start = max(total - int(end_s), 0)
+                end = total - 1
+            else:
+                start = int(start_s)
+                end = int(end_s) if end_s else total - 1
+            end = min(end, total - 1)
+            if start >= total or start > end:
+                return Response(status_code=416, headers={"content-range": f"bytes */{total}"})
+            body = data[start : end + 1]
+            headers["content-range"] = f"bytes {start}-{end}/{total}"
+            headers["content-length"] = str(len(body))
+            return Response(body, status_code=206, media_type=content_type, headers=headers)
+
+    headers["content-length"] = str(total)
+    return Response(data, media_type=content_type, headers=headers)
+
+
+async def _serve_youtube(request: Request, video_id: str) -> Response:
+    # The id goes into a URL path on your Lavalink server (with its password),
+    # so only accept a real 11-character YouTube id.
+    if not re.fullmatch(r"[A-Za-z0-9_-]{11}", video_id):
+        raise HTTPException(400, "Invalid YouTube video id")
+    try:
+        data, content_type = await lavalink_source.get_audio(video_id)
+    except lavalink_source.LavalinkError as e:
+        raise HTTPException(502, f"Could not resolve stream: {e}")
+    return _range_response(data, content_type, request.headers.get("range"))
 
 
 @app.get("/api/stream")
@@ -114,6 +161,9 @@ async def api_stream(request: Request, url: str, source: str = "sc"):
     audio URL first.
     """
     source_url = unquote(url)
+
+    if source == "youtube":
+        return await _serve_youtube(request, source_url)
 
     if source == "jiosaavn":
         target_url = source_url
