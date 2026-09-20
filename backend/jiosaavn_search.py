@@ -35,7 +35,7 @@ async def search(query: str, limit: int = 20) -> list[dict]:
             # (as opposed to a jiosaavn.com URL) and returns a list of songs.
             resp = await client.get(
                 f"{SAAVN_API_BASE}/result/",
-                params={"query": query, "lyrics": "false"},
+                params={"query": query, "lyrics": "false", "limit": limit},
             )
         except httpx.HTTPError as e:
             raise JioSaavnError(f"Could not reach JioSaavn API: {e}")
