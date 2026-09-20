@@ -123,7 +123,7 @@ async def api_search(q: str, source: str = "sc"):
         raise HTTPException(502, f"Search failed: {e}")
     # Most popular first (play count). Sort is stable, so tracks without a
     # play count keep their original order at the bottom.
-    results.sort(key=lambda r: r.get("popularity") or 0, reverse=True)
+    results.sort(key=lambda r: (r.get("available", True), r.get("popularity") or 0), reverse=True)
     return {"results": results}
 
 
