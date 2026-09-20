@@ -11,6 +11,7 @@ anything beyond light personal use, self-host your own instance (the repo
 deploys to Vercel in a couple of commands) and point SAAVN_API_BASE at it.
 """
 
+import html
 import os
 import httpx
 
@@ -29,6 +30,11 @@ def _pick_url(arr) -> str | None:
         return None
     last = arr[-1]
     return last.get("url") or last.get("link")
+
+
+def _clean(text: str | None) -> str | None:
+    """JioSaavn returns HTML-escaped text (e.g. "D&amp;B"); decode it."""
+    return html.unescape(text) if text else text
 
 
 def _to_int(value) -> int | None:
@@ -69,8 +75,8 @@ async def search(query: str, limit: int = 20) -> list[dict]:
     for song in songs:
         duration_s = song.get("duration")
         results.append({
-            "title": song.get("name") or song.get("title"),
-            "author": _artist_names(song),
+            "title": _clean(song.get("name") or song.get("title")),
+            "author": _clean(_artist_names(song)),
             "duration_ms": int(float(duration_s) * 1000) if duration_s else None,
             "artwork": _pick_url(song.get("image")),
             "uri": _pick_url(song.get("downloadUrl")),  # already a direct audio URL
