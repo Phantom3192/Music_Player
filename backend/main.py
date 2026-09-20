@@ -5,7 +5,7 @@ import httpx
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 import jiosaavn_search
@@ -14,7 +14,7 @@ load_dotenv()
 
 FRONTEND_ORIGIN = os.getenv("FRONTEND_ORIGIN", "http://localhost:8000")
 
-app = FastAPI(title="Ghost Cave")
+app = FastAPI(title="Eclipse")
 
 app.add_middleware(
     CORSMiddleware,
@@ -111,6 +111,14 @@ async def api_stream(request: Request, url: str):
     )
 
 
-# Serve the frontend (index.html, style.css, app.js) at "/"
 _FRONTEND_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "frontend")
+
+
+@app.get("/player")
+async def player_page():
+    """The music player. The homepage (index.html) is served at "/"."""
+    return FileResponse(os.path.join(_FRONTEND_DIR, "player.html"))
+
+
+# Serve the rest of the frontend (index.html, style.css, app.js) at "/"
 app.mount("/", StaticFiles(directory=_FRONTEND_DIR, html=True), name="frontend")

@@ -1,4 +1,4 @@
-# Ghost Cave — personal music player
+# Eclipse — personal music player
 
 Browser-based player that streams from JioSaavn (via your own
 [Jio-Savan-API](https://github.com/Phantom3192/Jio-Savan-API) deployment).
@@ -7,7 +7,7 @@ The UI uses the same dark "system console" design as the Jarvis website.
 ## Architecture
 
 ```
-Browser (index.html / app.js)
+Browser (index.html = homepage, player.html + app.js = player)
    |
    |-- GET /api/search?q=...   -> Jio-Savan-API  /result/?query=...
    |
@@ -27,7 +27,7 @@ pip install -r ../requirements.txt
 uvicorn main:app --reload --port 8000
 ```
 
-Open http://localhost:8000 — the backend also serves the frontend.
+Open http://localhost:8000 for the homepage, or http://localhost:8000/player for the player.
 
 ## Notes
 

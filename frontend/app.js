@@ -351,10 +351,10 @@ progress.addEventListener("keydown", (e) => {
 
 volume.addEventListener("input", () => {
   audio.volume = parseFloat(volume.value);
-  try { localStorage.setItem("ghostcave.volume", volume.value); } catch (_) {}
+  try { localStorage.setItem("eclipse.volume", volume.value); } catch (_) {}
 });
 try {
-  const saved = localStorage.getItem("ghostcave.volume");
+  const saved = localStorage.getItem("eclipse.volume");
   if (saved !== null) {
     volume.value = saved;
     audio.volume = parseFloat(saved);

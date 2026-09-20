@@ -3,99 +3,122 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Ghost Cave — music player</title>
-<meta name="description" content="A personal listening room powered by JioSaavn.">
-<meta name="theme-color" content="#5ee7ff">
+<title>Eclipse — a personal listening room</title>
+<meta name="description" content="Eclipse is a personal listening room. Search any song, build a queue and let it play.">
+<meta name="theme-color" content="#070508">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Eclipse — a personal listening room">
+<meta property="og:description" content="Search any song, build a queue and let it play.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='13' fill='%23120609' stroke='%23ff7a4d' stroke-width='2.5'/%3E%3Cpath d='M16 3a13 13 0 0 1 0 26' fill='none' stroke='%23ffd9a8' stroke-width='1.2' opacity='.8'/%3E%3C/svg%3E">
 </head>
 <body>
 
 <nav class="nav">
   <div class="wrap">
-    <a href="/" class="nav-brand"><span class="dot"></span>Ghost Cave</a>
-    <div class="nav-ctas"><span class="nav-tag">Source · JioSaavn</span></div>
+    <a href="/" class="nav-brand"><span class="dot"></span>Eclipse</a>
+    <div class="nav-links">
+      <a href="/" class="active">Home</a>
+      <a href="/player">Player</a>
+    </div>
+    <div class="nav-ctas"><a class="nav-cta" href="/player">Start listening</a></div>
   </div>
 </nav>
 
-<section class="music-shell wrap">
-  <div class="music-panel">
-
-    <aside class="music-sidebar">
-      <nav class="music-sidebar-nav">
-        <a href="#" class="music-sidebar-link active" data-panel="search">
-          <span class="music-icon">🔎</span> Search
-        </a>
-        <a href="#" class="music-sidebar-link" data-panel="queue">
-          <span class="music-icon">🎶</span> Queue
-          <span class="music-count-tag" id="queue-count">0</span>
-        </a>
-      </nav>
-    </aside>
-
-    <main class="music-main">
-
-      <div class="music-nowplaying-card" id="now-playing">
-        <div class="music-nowplaying-art"><img id="np-artwork" alt="" hidden></div>
-        <div class="music-nowplaying-info">
-          <div class="music-nowplaying-title" id="np-title">Nothing playing yet</div>
-          <div class="music-nowplaying-sub" id="np-author">Search for a song to get started</div>
-          <div class="music-progress-row">
-            <div class="music-progress" id="progress" role="slider" aria-label="Seek" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" tabindex="0">
-              <div class="music-progress-fill" id="progress-fill"></div>
-            </div>
-            <span class="music-time" id="time-label">0:00 / 0:00</span>
-          </div>
-        </div>
-        <div class="music-controls">
-          <button class="music-ctrl-btn" id="prev-btn" title="Previous" aria-label="Previous" disabled>⏮</button>
-          <button class="music-ctrl-btn music-ctrl-primary" id="play-btn" title="Play/Pause" aria-label="Play or pause" disabled>▶</button>
-          <button class="music-ctrl-btn" id="next-btn" title="Next" aria-label="Next" disabled>⏭</button>
-          <input class="music-volume" id="volume" type="range" min="0" max="1" step="0.01" value="1" aria-label="Volume" title="Volume">
+<header class="hero">
+  <div class="wrap hero-grid">
+    <div class="hero-copy">
+      <p class="eyebrow">Personal listening room</p>
+      <h1>Music, in the <span class="accent">shadow</span> of the moon.</h1>
+      <p class="lede">Eclipse is a quiet place to listen. Search any song, line up a queue and let it play — no clutter, no noise, just the music.</p>
+      <div class="hero-ctas">
+        <a class="btn btn-primary" href="/player">Open the player</a>
+        <a class="btn btn-ghost" href="#how">How it works</a>
+      </div>
+    </div>
+    <div class="hero-visual">
+      <div class="eclipse" aria-hidden="true">
+        <div class="eclipse-halo"></div>
+        <div class="eclipse-disc">
+          <div class="eclipse-shadow"></div>
         </div>
       </div>
+    </div>
+  </div>
+</header>
 
-      <p class="music-toast" id="toast" hidden></p>
-
-      <div id="panel-search" class="music-view">
-        <form class="music-play-card" id="search-form">
-          <input type="text" id="search-input" class="music-play-input" placeholder="Song, artist or album" autocomplete="off" aria-label="Search songs">
-          <button class="btn btn-primary" type="submit">Search</button>
-        </form>
-
-        <div class="music-queue-card">
-          <ul class="music-queue-list" id="results">
-            <li class="music-queue-empty">Search for something to start filling your queue.</li>
-          </ul>
-        </div>
+<section class="section" id="features">
+  <div class="wrap">
+    <div class="section-head">
+      <p class="eyebrow">Features</p>
+      <h2>Everything you need, nothing you don't.</h2>
+      <p>A focused player built for the late hours.</p>
+    </div>
+    <div class="grid-3">
+      <div class="card">
+        <div class="card-icon">🔎</div>
+        <h3>Search anything</h3>
+        <p>Look up a song, an artist or an album and start playing in a click.</p>
       </div>
-
-      <div id="panel-queue" class="music-view" hidden>
-        <div class="music-queue-card">
-          <div class="music-toolbar music-toolbar-tight">
-            <h3>Queue</h3>
-            <button class="btn btn-ghost btn-small" id="clear-btn" type="button">Clear</button>
-          </div>
-          <ul class="music-queue-list" id="queue-list">
-            <li class="music-queue-empty">Your queue is empty.</li>
-          </ul>
-        </div>
+      <div class="card">
+        <div class="card-icon">🎶</div>
+        <h3>Build a queue</h3>
+        <p>Add tracks as you find them, jump between them and remove what you don't want.</p>
       </div>
+      <div class="card">
+        <div class="card-icon">🌙</div>
+        <h3>Made for the night</h3>
+        <p>A dark, calm interface that works the same on your desktop and your phone.</p>
+      </div>
+    </div>
+  </div>
+</section>
 
-    </main>
+<section class="section" id="how">
+  <div class="wrap">
+    <div class="section-head">
+      <p class="eyebrow">How it works</p>
+      <h2>Three steps to playing.</h2>
+    </div>
+    <div class="grid-3">
+      <div class="card">
+        <div class="step-num">01</div>
+        <h3>Search</h3>
+        <p>Type what you want to hear into the search bar in the player.</p>
+      </div>
+      <div class="card">
+        <div class="step-num">02</div>
+        <h3>Pick a track</h3>
+        <p>Click a result to play it now, or use the menu to add it to your queue.</p>
+      </div>
+      <div class="card">
+        <div class="step-num">03</div>
+        <h3>Let it play</h3>
+        <p>Songs roll on one after another. Skip, seek and adjust the volume any time.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section">
+  <div class="wrap">
+    <div class="cta-band">
+      <h2>Ready when you are.</h2>
+      <p>Step into the shadow and press play.</p>
+      <a class="btn btn-primary" href="/player">Open the player</a>
+    </div>
   </div>
 </section>
 
 <footer>
   <div class="wrap">
-    <div class="footer-brand">Ghost Cave — personal listening room</div>
-    <div class="footer-links"><span>Music via JioSaavn · for personal use</span></div>
+    <div class="footer-brand">Eclipse — personal listening room</div>
+    <div class="footer-links"><a href="/">Home</a><a href="/player">Player</a></div>
   </div>
 </footer>
 
-<audio id="audio" preload="none"></audio>
-<script src="app.js"></script>
 </body>
-</html> 
+</html>
