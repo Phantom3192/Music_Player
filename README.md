@@ -1,19 +1,28 @@
 # Eclipse — personal music player
 
-Browser-based player that streams from JioSaavn (via your own
-[Jio-Savan-API](https://github.com/Phantom3192/Jio-Savan-API) deployment).
-The UI uses the same dark "system console" design as the Jarvis website.
+Browser-based player that streams through your own Lavalink node, using the
+[browserstream plugin](https://github.com/Phantom3192/Jarvis_Lavalink) in its
+standalone HTTP mode (no Discord voice connection needed). The UI uses the
+same dark "system console" design as the Jarvis website.
 
 ## Architecture
 
 ```
 Browser (index.html = homepage, player.html + app.js = player)
    |
-   |-- GET /api/search?q=...   -> Jio-Savan-API  /result/?query=...
+   |-- GET /api/search?q=...   -> Lavalink  GET /browser/search?identifier=...
+   |                              (bare terms are searched as "ytsearch:...";
+   |                               a pasted URL is passed straight through)
    |
-   '-- GET /api/stream?url=... -> proxies the audio file from JioSaavn's CDN
-                                  (saavncdn.com only), with Range support
+   '-- GET /api/stream?url=... -> Lavalink  GET /browser/stream?identifier=...
+                                  live-transcoded Ogg Opus audio.
+                                  `url` here is a track's `uri` from
+                                  /api/search - opaque to the frontend.
 ```
+
+The FastAPI backend holds the Lavalink node's Authorization password
+server-side (`lavalink_search.py`) so the browser never sees it and can't be
+used to hit the node directly.
 
 ## Setup
 
@@ -23,7 +32,10 @@ python -m venv venv
 source venv/bin/activate        # Windows: venv\Scripts\activate
 pip install -r ../requirements.txt
 # Configuration goes in environment variables (or a .env file in backend/):
-#   SAAVN_API_BASE   e.g. https://your-jio-savan-api.vercel.app
+#   LAVALINK_HOST       e.g. 127.0.0.1 (or wherever Jarvis_Lavalink is deployed)
+#   LAVALINK_PORT       e.g. 26135 (matches application.yml's server.port)
+#   LAVALINK_PASSWORD   same value as application.yml's server.password
+#   LAVALINK_SECURE     "true" if the node is behind TLS, otherwise omit
 uvicorn main:app --reload --port 8000
 ```
 
@@ -31,11 +43,12 @@ Open http://localhost:8000 for the homepage, or http://localhost:8000/player for
 
 ## Notes
 
-- **Region matters.** JioSaavn restricts a lot of its catalog (especially
-  English / major-label tracks) to requests coming from India. Run
-  Jio-Savan-API — and, if streams fail, this backend too — from an Indian
-  region (e.g. Vercel `bom1`). Tracks JioSaavn flags as restricted show an
-  "Unavailable" tag and are sorted below playable ones.
-- `/api/stream` only proxies `saavncdn.com` URLs, so it can't be used as an
-  open proxy.
+- **The Lavalink node must be reachable from this backend** and running the
+  browserstream plugin (v1.1.0+, from `Jarvis_Lavalink/plugins/`), started
+  outside a Discord voice session — see that repo's `start.sh`.
+- **No seeking on the server side.** `/browser/stream` transcodes live and
+  doesn't support byte-range requests, so the progress bar/seek control is
+  driven only by what the `<audio>` element has already buffered.
+- `/api/stream` only ever talks to the configured `LAVALINK_HOST`, so it
+  can't be used as an open proxy to arbitrary URLs.
 - This is for personal use.
