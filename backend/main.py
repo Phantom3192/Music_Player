@@ -1,14 +1,13 @@
 import os
-from urllib.parse import unquote, urlparse
+from urllib.parse import unquote
 
-import httpx
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
-import jiosaavn_search
+import lavalink_search
 
 load_dotenv()
 
@@ -23,77 +22,37 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Only JioSaavn's audio CDN may be proxied, so /api/stream can't be used as an
-# open proxy to arbitrary URLs.
-_ALLOWED_AUDIO_HOSTS = ("saavncdn.com",)
-
-
-def _is_allowed_audio_url(url: str) -> bool:
-    parsed = urlparse(url)
-    host = (parsed.hostname or "").lower()
-    return parsed.scheme in ("http", "https") and any(
-        host == h or host.endswith("." + h) for h in _ALLOWED_AUDIO_HOSTS
-    )
-
-
-def _content_type_for(url: str) -> str:
-    path = urlparse(url).path.lower()
-    if path.endswith(".mp3"):
-        return "audio/mpeg"
-    return "audio/mp4"  # JioSaavn serves AAC in an .mp4 container
-
 
 @app.get("/api/search")
 async def api_search(q: str):
     if not q.strip():
         raise HTTPException(400, "Query param 'q' is required")
     try:
-        results = await jiosaavn_search.search(q)
-    except jiosaavn_search.JioSaavnError as e:
+        results = await lavalink_search.search(q)
+    except lavalink_search.LavalinkError as e:
         raise HTTPException(502, f"Search failed: {e}")
-    # Available tracks first, then most popular (play count). Sort is stable,
-    # so tracks without a play count keep their original order at the bottom.
-    results.sort(
-        key=lambda r: (r.get("available", True), r.get("popularity") or 0),
-        reverse=True,
-    )
     return {"results": results}
 
 
 @app.get("/api/stream")
-async def api_stream(request: Request, url: str):
+async def api_stream(url: str):
     """
-    Proxies a JioSaavn audio file (a track's `uri` from /api/search).
-    Forwards the client's Range header so seeking works in the <audio> tag.
+    Proxies audio from the Lavalink node's browserstream plugin.
+    `url` is a track's `uri` from /api/search (the identifier the plugin
+    re-resolves and transcodes to Ogg Opus on the fly).
+
+    Note: because this is a live transcode rather than a static file, the
+    plugin doesn't support byte-range requests, so seeking works only via
+    the <audio> element's own buffered playback, not server-side seeking.
     """
-    target_url = unquote(url)
-    if not _is_allowed_audio_url(target_url):
-        raise HTTPException(400, "Only JioSaavn audio URLs can be streamed")
+    identifier = unquote(url)
+    if not identifier:
+        raise HTTPException(400, "Query param 'url' is required")
 
-    upstream_headers = {}
-    range_header = request.headers.get("range")
-    if range_header:
-        upstream_headers["Range"] = range_header
-
-    client = httpx.AsyncClient(timeout=None)
     try:
-        upstream_req = client.build_request("GET", target_url, headers=upstream_headers)
-        upstream_resp = await client.send(upstream_req, stream=True)
-    except httpx.HTTPError as e:
-        await client.aclose()
-        raise HTTPException(502, f"Could not reach JioSaavn's audio server: {e}")
-
-    if upstream_resp.status_code >= 400:
-        status = upstream_resp.status_code
-        await upstream_resp.aclose()
-        await client.aclose()
-        raise HTTPException(502, f"JioSaavn refused this track (HTTP {status})")
-
-    response_headers = {}
-    for h in ("content-range", "content-length", "accept-ranges"):
-        if h in upstream_resp.headers:
-            response_headers[h] = upstream_resp.headers[h]
-    response_headers.setdefault("accept-ranges", "bytes")
+        client, upstream_resp = await lavalink_search.open_stream(identifier)
+    except lavalink_search.LavalinkError as e:
+        raise HTTPException(502, str(e))
 
     async def body_iterator():
         try:
@@ -105,9 +64,8 @@ async def api_stream(request: Request, url: str):
 
     return StreamingResponse(
         body_iterator(),
-        status_code=upstream_resp.status_code,
-        media_type=_content_type_for(target_url),
-        headers=response_headers,
+        media_type="audio/ogg",
+        headers={"Cache-Control": "no-store"},
     )
 
 
